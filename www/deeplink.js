@@ -120,6 +120,37 @@ var IonicDeeplink = {
    * Check if the path matches the route.
    */
   routeMatch: function (route, path) {
+    if (route.indexOf('regex#') === 0) {
+      var routeParams = [];
+      var regex = route.slice(6);
+
+      if (regex.indexOf(':') !== -1) {
+        var splitRoute = regex.split('\\/');
+
+        for (var i = 0; i < splitRoute.length; i++) {
+          var sr = splitRoute[i];
+          if (sr[0] === ':') {
+            routeParams.push(sr.slice(1));
+            splitRoute[i] = '(.+?)(?:\/|$)'
+          }
+        }
+
+        regex = splitRoute.join('\\/');
+      }
+
+      var result = new RegExp(regex, 'g').exec(path);
+      if (!result || result.length - 1 !== routeParams.length) {
+        return false;
+      }
+
+      var returnMap = {};
+      for (var j = 0; j < routeParams.length; j++) {
+        returnMap[routeParams[j]] = result[j+1]
+      }
+
+      return returnMap;
+    }
+
     if (route === path) {
       return {};
     }
@@ -200,19 +231,27 @@ var IonicDeeplink = {
    * This method tries to infer what the proper "path" is from the URL
    */
   _getRealPath: function (data) {
-
-    // 1. Let's just do the obvious and return the parsed 'path' first, if available.
-    if (!!data.path && data.path !== "") {
-      return data.path;
-    }
-
-    // 2. Now, are we using a non-standard scheme?
+    // 1. Are we using a non-standard scheme?
     var isCustomScheme = data.scheme.indexOf('http') === -1;
 
-    // 3. Nope so we'll go fragment first if available as that should be what comes after
+    // 2. Let's just do the obvious and return the parsed 'path' first, if available.
+    if (!!data.path && data.path !== "") {
+      // We are not using a host together with a custom scheme, so fix the path if necessary
+      if (isCustomScheme && !!data.host) {
+        if (data.host.charAt(0) != '/') {
+          data.host = '/' + data.host;
+        }
+
+        return data.host + data.path;
+      } else {
+        return data.path;
+      }
+    }
+
+    // 3. Not using non-standard scheme, so we'll go fragment first if available as that should be what comes after
     if (!isCustomScheme) {
       if (!!data.fragment) {
-        return this._stripFragmentLeadingHash(data.fragment);
+        return self._stripFragmentLeadingHash(data.fragment);
       }
     }
 
@@ -227,7 +266,7 @@ var IonicDeeplink = {
 
     // 5. We'll use fragment next if we're in a custom scheme, though this might need a little more thought
     if (isCustomScheme && !!data.fragment) {
-      return this._stripFragmentLeadingHash(data.fragment);
+      return self._stripFragmentLeadingHash(data.fragment);
     }
 
     // 6. Last resort - no obvious path, fragment or host, so we
